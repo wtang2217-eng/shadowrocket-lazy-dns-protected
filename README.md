@@ -1,65 +1,69 @@
-# Shadowrocket 中国直连 / 境外与未知代理 / DNS 隐私强化版
+# Shadowrocket 中国大陆直连 / 国外与未知代理 / DNS 隐私兼容版
 
-这是为 Shadowrocket 原生配置语法制作的无策略组版本。它不使用 Clash/Mihomo、Quantumult X、Surge 或 V2Ray 的规则格式。
+这是一个只使用 Shadowrocket 原生配置语法与 Shadowrocket 原生远程规则的无策略组配置。
 
 ## 一键导入
 
-长期更新链接：
+长期 Raw 链接：
 
 ```text
 https://raw.githubusercontent.com/wtang2217-eng/shadowrocket-lazy-dns-protected/main/lazy_dns_protected.conf
 ```
 
-本次缓存刷新链接：
+本次热修缓存刷新链接：
 
 ```text
-https://raw.githubusercontent.com/wtang2217-eng/shadowrocket-lazy-dns-protected/main/lazy_dns_protected.conf?v=20260815-2
+https://raw.githubusercontent.com/wtang2217-eng/shadowrocket-lazy-dns-protected/main/lazy_dns_protected.conf?v=20260815-hotfix3
 ```
 
-导入后：
+如果上一版导入后所有节点都显示超时：
 
-1. Shadowrocket 首页选择一个可用节点。
-2. “全局路由”选择“配置”，不能选“直连”或“代理”。
-3. 配置页对该文件执行“使用配置 / 编译配置”。
-4. 断开后重新连接；必要时删除旧配置再用缓存刷新链接导入。
-5. 规则集自动更新时需要能访问 GitHub Raw。
+1. 先完全关闭 Shadowrocket VPN。
+2. 删除手机中那份旧配置，再用上面的缓存刷新链接重新导入。
+3. 首页选择一个原本可用的节点。
+4. 对新配置执行“使用配置 / 编译配置”。
+5. 把“全局路由”设为“配置”，再重新连接。
+6. 建议使用 Shadowrocket 2.2.64 或更高版本；较旧版本不完整支持这里的 DNS 代理/ECS 语法。
 
-## 路由模型
+## 本次热修
 
-优先级从上到下：
+全节点超时与上一版同时引入的四项高风险改动高度相关。本版已经：
+
+- 删除覆盖全部 IPv4 的 `tun-included-routes = 0.0.0.0/1,128.0.0.0/1`。
+- 不再把 Fake-IP 保留段 `198.18.0.0/15` 排除在 TUN 外。
+- 删除可能误伤域名型/IPv6 节点的 `::/0 REJECT`。
+- 把节点域名引导恢复为此前可连接版本的 `tls://1.1.1.1:853,tls://223.5.5.5:853`。
+- 删除 ChinaMax 超大表，降低首次下载、编译和 Network Extension 内存压力。
+
+## 通用分流，不给检测站“写答案”
+
+配置文件中没有 BrowserLeaks、DNSLeakTest、IPLeak、DNSCheck、Sukka、net.vin 或其他检测站的域名特例。它们与普通网站经过完全相同的规则链：
 
 1. 局域网地址直连。
-2. IPv6 业务流量拒绝。
-3. DNS/IP/分流检测、公共 DoH、AI 与 Global 境外规则代理。
-4. ChinaMaxNoIP 主表和 DOMAIN-SET 域名表直连。
-5. ChinaIPsBGP 与 GeoIP CN 的硬编码大陆 IP 直连。
-6. `FINAL,PROXY`：未知域名与未知 IP 一律使用首页当前选择的节点。
+2. Blackmatrix7 的 Shadowrocket 原生 AI/Global 国外规则走 `PROXY`。
+3. ChinaIPsBGP 与 `GEOIP,CN` 判定为中国大陆 IP 的流量走 `DIRECT`。
+4. 其他国外、未知域名和未知 IP 由 `FINAL,PROXY` 接管。
 
-旧配置的核心错误是只引用了不完整的中国列表，并把宽泛 Global 放在错误的组合中。更关键的是，Blackmatrix7 的大型 Shadowrocket 列表将大部分 `DOMAIN-SUFFIX` 放在单独的 `*_Domain.list`；漏掉 DOMAIN-SET 会导致腾讯、字节等大量域名走到 FINAL 代理。
+因此，BrowserLeaks 这类国外网站显示代理出口，是“国外与未知走代理”这条通用策略自然得到的结果，并非为检测站单独强制。net.vin 页面本身如果解析到大陆 IP，会自然直连；它发出的腾讯、字节、AI 等探测请求仍分别经过同一套规则判断。
+
+这里不再使用容易把国外网站误收为“中国”的 China/ChinaMax 域名聚合表。未知域名会通过代理侧加密 DNS 取得带固定中国 ECS 的结果，再由 `GEOIP,CN` 判断：大陆地址直连，非大陆地址继续代理。
 
 ## DNS 模型
 
-- PROXY 域名由代理服务器远程解析，手机不为这些业务域名做本地解析。
-- DIRECT 域名使用 Google DoH，但 DoH 请求本身经首页当前节点，并强制中国 ECS `120.76.0.0/14`。
-- ECS 是固定的中国网段，只用于取得大陆 CDN，不包含手机真实 IP 或真实所在地。
-- 主 DNS 与备用 DNS 都不含 `system` 或明文 DNS，失败即关闭，不回退运营商 DNS。
+- 普通域名与直连域名使用 Google DoH，DoH 请求本身通过首页当前选择的代理节点。
+- 固定 ECS `120.76.0.0/14` 只用于获得大陆 CDN，不是手机的真实 IP，也不会随你以后更换所在地而改变。
+- 主 DNS、直连 DNS 与备用 DNS 均不使用 `system` 或明文 DNS。
 - `hijack-dns = :53` 捕获进入隧道的普通 TCP/UDP 53。
-- 节点域名存在“先有节点还是先有代理”的启动循环，因此单独使用阿里 `223.5.5.5` 与 DNSPod `1.12.12.12` 的 IP 字面量 DoH；ISP 看不到节点域名明文。
+- 节点建立之前无法使用该节点解析它自己，所以节点域名单独使用 IP 字面量 DoT 引导；这只涉及节点主机名，不包含日常访问的国外业务域名。
+- `ipv6 = false`、`prefer-ipv6 = false` 关闭 Shadowrocket 的普通 IPv6 业务流量。
 
-已于 2026-08-15 实测同一中国 ECS：
+## 如何正确看检测结果
 
-- `perfops.byte-test.com` 返回中国大陆 `124.225.* / 125.94.* / 59.38.*` 等地址。
-- `r.inews.qq.com` 返回中国大陆 `183.47.104.164 / 183.47.104.207`。
+BrowserLeaks 顶部的 “Your IP” 是该网页看到的 HTTP 出口，不是 DNS。国外测试页在“配置”路由下应显示当前选择节点的出口，不能显示手机运营商公网 IP。
 
-## 正确理解 BrowserLeaks
+DNS 表显示的是递归解析器出口。出现多个 Google/Cloudflare Anycast 地址是正常的；真正需要警惕的是中国电信、联通、移动、家庭路由器或当前所在地 ISP 的递归 DNS。
 
-页面顶部的 “Your IP” 是网站看到的 HTTP 出口。境外测试页应显示当前代理出口，不能显示手机运营商公网 IP。
-
-DNS 表会列出递归解析器出口。看到 Cloudflare 或 Google 的多个 Anycast 地址并不等于“多个节点泄漏”；真正异常的是出现中国电信、联通、移动、家庭路由器或当前网络运营商的递归 DNS。
-
-## 真机验收
-
-分别在 Wi-Fi 与蜂窝网络测试：
+请分别在 Wi-Fi 与蜂窝网络测试：
 
 - https://browserleaks.com/dns
 - https://www.dnsleaktest.com/
@@ -69,28 +73,18 @@ DNS 表会列出递归解析器出口。看到 Cloudflare 或 Google 的多个 A
 - https://ip.skk.moe/
 - https://net.vin/
 
-预期：
+同时在 Shadowrocket“数据”中核对每个请求实际命中的规则与策略。测试站旗帜或商业 GeoIP 可能误判位置，连接日志才是分流依据。
 
-- BrowserLeaks 顶部 IP 是所选代理出口。
-- DNS 列表只有代理侧/配置侧解析器，不出现当前 ISP DNS。
-- test-ipv6.com 不显示公网 IPv6。
-- net.vin 的字节与腾讯国内探针走 DIRECT；AI 与境外探针走 PROXY。
+## 无法由通用配置消除的边界
 
-定位时在 Shadowrocket“数据”中检查：
+如果订阅节点地址本身是域名，建立代理前必须先解析一次节点域名。DoT 会加密这段传输，但对应解析器仍能看到节点主机名与请求源 IP。要连这一次也完全消除，节点必须直接使用 IPv4，或为每个节点域名维护稳定的 IPv4 Host 映射；通用配置无法预先知道订阅商的节点地址。
 
-- 代理日志：`browserleaks.com` 应命中 PROXY；`perfops.byte-test.com` 与 `r.inews.qq.com` 应命中 DIRECT。
-- DNS 日志：不应出现 `system`、家庭路由器、当前 ISP 的 DNS 上游。
-
-## 不能被通用配置消除的启动边界
-
-如果节点地址本身是域名，建立代理之前必须先解析一次该节点域名。这里已用国内加密 DoH 保护传输，但阿里/DNSPod 仍能看到该节点域名与请求源 IP。要连这一次也完全消除，订阅节点地址必须直接使用 IPv4，或为每个节点域名维护稳定的 IPv4 Host 映射；通用配置无法预先知道订阅商的节点域名和 IP。
-
-同样，`ipv6 = false` 不一定阻止“节点域名”自身使用 AAAA。若要绝对禁止节点 IPv6，节点地址也应使用 IPv4 字面量。
+应用自带的 DoH/DoT/DoQ 属于普通 HTTPS/TLS/QUIC 流量，`:53` 无法识别其内部查询；它们仍按上述通用分流规则走 DIRECT 或 PROXY。iOS 上其他 VPN/DNS 描述文件、Private Relay，以及 Shadowrocket 未连接时的流量也不受本配置控制。
 
 ## 数据与兼容性来源
 
-- Shadowrocket 社区手册（配置语义）：https://github.com/LOWERTOP/Shadowrocket/wiki/
+- Shadowrocket 配置语义：https://github.com/LOWERTOP/Shadowrocket/wiki/
 - Blackmatrix7 Shadowrocket 原生规则：https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Shadowrocket
-- ChinaMaxNoIP 使用说明：https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/ChinaMaxNoIP/README.md
-- ChinaIPsBGP 使用说明：https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/ChinaIPsBGP/README.md
+- ChinaIPsBGP：https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Shadowrocket/ChinaIPsBGP
 - Google Public DNS DoH：https://developers.google.com/speed/public-dns/docs/doh/
+- Cloudflare DNS over TLS：https://developers.cloudflare.com/1.1.1.1/encryption/dns-over-tls/
